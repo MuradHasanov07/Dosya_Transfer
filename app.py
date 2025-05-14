@@ -6,7 +6,9 @@ import socket
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'gizli_anahtar'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+db_path = os.path.join('/tmp', 'users.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
