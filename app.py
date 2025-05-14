@@ -3,7 +3,8 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import socket
-import requests
+import urllib.request
+import json
 
 # Uygulama klasörünün yolunu al
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -56,18 +57,19 @@ init_db()
 def get_ip():
     try:
         # Public IP adresini al
-        response = requests.get('https://api.ipify.org?format=json')
-        public_ip = response.json()['ip']
+        public_ip = urllib.request.urlopen('https://api.ipify.org').read().decode('utf8')
         
         # Local IP adresini al
         hostname = socket.gethostname()
-        local_ip = socket.gethostbyname(hostname)
+        ip_list = socket.gethostbyname_ex(hostname)[2]
+        local_ip = next((ip for ip in ip_list if ip.startswith(('192.168.', '10.'))), ip_list[0])
         
         return {
             'public_ip': public_ip,
             'local_ip': local_ip
         }
-    except:
+    except Exception as e:
+        print(f"Error getting IP: {e}")
         return {
             'public_ip': 'Unable to get public IP',
             'local_ip': 'Unable to get local IP'
