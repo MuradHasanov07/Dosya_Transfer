@@ -3,18 +3,28 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import socket
+import requests
+
+# Uygulama klasörünün yolunu al
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'gizli_anahtar'
-db_path = os.path.join('/tmp', 'users.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
+# SQLite veritabanı yolunu ayarla
+DB_PATH = os.path.join(BASE_DIR, 'users.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'uploads'
 
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+# Upload klasörü yolunu ayarla
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Gerekli klasörleri oluştur
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+# Veritabanı nesnesini oluştur
 db = SQLAlchemy(app)
 
 class User(db.Model):
@@ -24,13 +34,44 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
 
-with app.app_context():
-    db.create_all()
+def init_db():
+    with app.app_context():
+        # Veritabanını oluştur
+        db.create_all()
+        
+        # Veritabanı dosyasının izinlerini kontrol et
+        if os.path.exists(DB_PATH):
+            try:
+                # Yazma izni ver
+                os.chmod(DB_PATH, 0o666)
+                print(f"Database created successfully at {DB_PATH}")
+            except Exception as e:
+                print(f"Error setting database permissions: {e}")
+        else:
+            print(f"Error: Database file not created at {DB_PATH}")
+
+# Veritabanını başlat
+init_db()
 
 def get_ip():
-    hostname = socket.gethostname()
-    ip_address = socket.gethostbyname(hostname)
-    return ip_address
+    try:
+        # Public IP adresini al
+        response = requests.get('https://api.ipify.org?format=json')
+        public_ip = response.json()['ip']
+        
+        # Local IP adresini al
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        
+        return {
+            'public_ip': public_ip,
+            'local_ip': local_ip
+        }
+    except:
+        return {
+            'public_ip': 'Unable to get public IP',
+            'local_ip': 'Unable to get local IP'
+        }
 
 @app.route('/')
 def index():
@@ -39,43 +80,56 @@ def index():
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        name = request.form['name']
-        surname = request.form['surname']
-        email = request.form['email']
-        password = request.form['password']
-        
-        if User.query.filter_by(email=email).first():
-            flash('Email already exists!')
+        try:
+            name = request.form['name']
+            surname = request.form['surname']
+            email = request.form['email']
+            password = request.form['password']
+            
+            if User.query.filter_by(email=email).first():
+                flash('Email already exists!')
+                return redirect(url_for('register'))
+            
+            hashed_password = generate_password_hash(password, method='sha256')
+            new_user = User(name=name, surname=surname, email=email, password=hashed_password)
+            
+            db.session.add(new_user)
+            db.session.commit()
+            
+            print(f"User registered successfully: {email}")
+            flash('Registration successful!')
+            return redirect(url_for('index'))
+        except Exception as e:
+            print(f"Error during registration: {e}")
+            db.session.rollback()
+            flash('Registration failed! Please try again.')
             return redirect(url_for('register'))
-        
-        hashed_password = generate_password_hash(password, method='sha256')
-        new_user = User(name=name, surname=surname, email=email, password=hashed_password)
-        db.session.add(new_user)
-        db.session.commit()
-        
-        flash('Registration successful!')
-        return redirect(url_for('index'))
     
     return render_template('register.html')
 
 @app.route('/login', methods=['POST'])
 def login():
-    email = request.form['email']
-    password = request.form['password']
-    
-    user = User.query.filter_by(email=email).first()
-    
-    if user and check_password_hash(user.password, password):
-        return redirect(url_for('transfer'))
-    else:
-        flash('Invalid email or password!')
+    try:
+        email = request.form['email']
+        password = request.form['password']
+        
+        user = User.query.filter_by(email=email).first()
+        
+        if user and check_password_hash(user.password, password):
+            return redirect(url_for('transfer'))
+        else:
+            flash('Invalid email or password!')
+            return redirect(url_for('index'))
+    except Exception as e:
+        print(f"Error during login: {e}")
+        flash('Login failed! Please try again.')
         return redirect(url_for('index'))
 
 @app.route('/transfer')
 def transfer():
-    ip_address = get_ip()
+    ip_addresses = get_ip()
     received_files = os.listdir(app.config['UPLOAD_FOLDER'])
-    return render_template('transfer.html', ip_address=ip_address, received_files=received_files)
+    return render_template('transfer.html', ip_addresses=ip_addresses, received_files=received_files)
 
 @app.route('/send_file', methods=['POST'])
 def send_file_to_peer():
