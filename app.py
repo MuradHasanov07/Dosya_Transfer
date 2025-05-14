@@ -1,10 +1,8 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-import socket
-import urllib.request
-import json
+from datetime import datetime
 
 # Uygulama klasörünün yolunu al
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -34,46 +32,29 @@ class User(db.Model):
     surname = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
+    files = db.relationship('File', backref='owner', lazy=True)
+
+class File(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(200), nullable=False)
+    upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
 def init_db():
     with app.app_context():
         # Veritabanını oluştur
         db.create_all()
-        
-        # Veritabanı dosyasının izinlerini kontrol et
-        if os.path.exists(DB_PATH):
-            try:
-                # Yazma izni ver
-                os.chmod(DB_PATH, 0o666)
-                print(f"Database created successfully at {DB_PATH}")
-            except Exception as e:
-                print(f"Error setting database permissions: {e}")
-        else:
-            print(f"Error: Database file not created at {DB_PATH}")
+        print(f"Database created successfully at {DB_PATH}")
 
 # Veritabanını başlat
 init_db()
 
-def get_ip():
-    try:
-        # Public IP adresini al
-        public_ip = urllib.request.urlopen('https://api.ipify.org').read().decode('utf8')
-        
-        # Local IP adresini al
-        hostname = socket.gethostname()
-        ip_list = socket.gethostbyname_ex(hostname)[2]
-        local_ip = next((ip for ip in ip_list if ip.startswith(('192.168.', '10.'))), ip_list[0])
-        
-        return {
-            'public_ip': public_ip,
-            'local_ip': local_ip
-        }
-    except Exception as e:
-        print(f"Error getting IP: {e}")
-        return {
-            'public_ip': 'Unable to get public IP',
-            'local_ip': 'Unable to get local IP'
-        }
+def get_user_folder(user_id):
+    """Her kullanıcı için ayrı klasör oluştur"""
+    user_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(user_id))
+    if not os.path.exists(user_folder):
+        os.makedirs(user_folder)
+    return user_folder
 
 @app.route('/')
 def index():
@@ -98,6 +79,9 @@ def register():
             db.session.add(new_user)
             db.session.commit()
             
+            # Kullanıcı klasörünü oluştur
+            get_user_folder(new_user.id)
+            
             print(f"User registered successfully: {email}")
             flash('Registration successful!')
             return redirect(url_for('index'))
@@ -118,6 +102,10 @@ def login():
         user = User.query.filter_by(email=email).first()
         
         if user and check_password_hash(user.password, password):
+            # Kullanıcı bilgilerini oturuma kaydet
+            session['user_id'] = user.id
+            session['user_email'] = user.email
+            session['user_name'] = user.name
             return redirect(url_for('transfer'))
         else:
             flash('Invalid email or password!')
@@ -127,14 +115,30 @@ def login():
         flash('Login failed! Please try again.')
         return redirect(url_for('index'))
 
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
 @app.route('/transfer')
 def transfer():
-    ip_addresses = get_ip()
-    received_files = os.listdir(app.config['UPLOAD_FOLDER'])
-    return render_template('transfer.html', ip_addresses=ip_addresses, received_files=received_files)
+    if 'user_id' not in session:
+        return redirect(url_for('index'))
+    
+    user_id = session['user_id']
+    
+    # Kullanıcının dosyalarını veritabanından al
+    user_files = File.query.filter_by(user_id=user_id).order_by(File.upload_date.desc()).all()
+    
+    return render_template('transfer.html', 
+                         received_files=user_files,
+                         user_name=session['user_name'])
 
 @app.route('/send_file', methods=['POST'])
 def send_file_to_peer():
+    if 'user_id' not in session:
+        return redirect(url_for('index'))
+        
     target_ip = request.form['target_ip']
     if 'file' not in request.files:
         flash('No file selected!')
@@ -145,14 +149,36 @@ def send_file_to_peer():
         flash('No file selected!')
         return redirect(url_for('transfer'))
     
-    filename = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    # Dosyayı kullanıcının klasörüne kaydet
+    user_folder = get_user_folder(session['user_id'])
+    filename = os.path.join(user_folder, file.filename)
     file.save(filename)
+    
+    # Dosya bilgisini veritabanına kaydet
+    new_file = File(
+        filename=file.filename,
+        user_id=session['user_id']
+    )
+    db.session.add(new_file)
+    db.session.commit()
+    
     flash('File sent successfully!')
     return redirect(url_for('transfer'))
 
-@app.route('/download_file/<filename>')
-def download_file(filename):
-    return send_file(os.path.join(app.config['UPLOAD_FOLDER'], filename), as_attachment=True)
+@app.route('/download_file/<int:file_id>')
+def download_file(file_id):
+    if 'user_id' not in session:
+        return redirect(url_for('index'))
+        
+    file = File.query.get_or_404(file_id)
+    
+    # Sadece dosya sahibi indirebilir
+    if file.user_id != session['user_id']:
+        flash('Unauthorized access!')
+        return redirect(url_for('transfer'))
+        
+    user_folder = get_user_folder(session['user_id'])
+    return send_file(os.path.join(user_folder, file.filename), as_attachment=True)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True) 
