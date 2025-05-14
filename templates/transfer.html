@@ -28,9 +28,13 @@
               <strong>Your Local IP Address:</strong>
               <span id="localIP">Loading...</span>
             </p>
+            <p>
+              <strong>Your Connection ID:</strong>
+              <span id="connectionId">Loading...</span>
+            </p>
             <small class="text-muted"
-              >Use Public IP for internet connections, Local IP for same network
-              connections.</small
+              >Share your Connection ID with others to receive files. Use Local
+              IP for same network, Public IP for different networks.</small
             >
           </div>
         </div>
@@ -46,36 +50,31 @@
               for message in messages %}
               <div class="alert alert-info">{{ message }}</div>
               {% endfor %} {% endif %} {% endwith %}
-              <form
-                method="POST"
-                action="{{ url_for('send_file_to_peer') }}"
-                enctype="multipart/form-data"
-              >
+              <form id="sendFileForm" onsubmit="return sendFile(event)">
                 <div class="mb-3">
-                  <label for="target_ip" class="form-label"
-                    >Target IP Address</label
+                  <label for="target_id" class="form-label"
+                    >Target Connection ID</label
                   >
                   <input
                     type="text"
                     class="form-control"
-                    id="target_ip"
-                    name="target_ip"
+                    id="target_id"
                     required
                   />
                   <small class="text-muted"
-                    >Enter public IP for internet connections, local IP for same
-                    network.</small
+                    >Enter the Connection ID of the recipient</small
                   >
                 </div>
                 <div class="mb-3">
                   <label for="file" class="form-label">Select File</label>
-                  <input
-                    type="file"
-                    class="form-control"
-                    id="file"
-                    name="file"
-                    required
-                  />
+                  <input type="file" class="form-control" id="file" required />
+                </div>
+                <div class="progress mb-3 d-none" id="progress">
+                  <div
+                    class="progress-bar"
+                    role="progressbar"
+                    style="width: 0%"
+                  ></div>
                 </div>
                 <div class="d-grid">
                   <button type="submit" class="btn btn-primary">
@@ -89,10 +88,10 @@
         <div class="col-md-6">
           <div class="card">
             <div class="card-header">
-              <h4>Your Files</h4>
+              <h4>Received Files</h4>
             </div>
             <div class="card-body">
-              <div class="list-group">
+              <div class="list-group" id="receivedFiles">
                 {% for file in received_files %}
                 <div class="list-group-item">
                   <div
@@ -122,7 +121,202 @@
       </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <script>
+      let peer = null;
+      let connections = {};
+
+      // Initialize PeerJS
+      function initPeer() {
+        peer = new Peer();
+
+        peer.on("open", (id) => {
+          document.getElementById("connectionId").textContent = id;
+        });
+
+        peer.on("connection", (conn) => {
+          connections[conn.peer] = conn;
+          setupConnection(conn);
+        });
+
+        peer.on("error", (err) => {
+          console.error("PeerJS error:", err);
+          alert("Connection error: " + err.message);
+        });
+      }
+
+      // Setup connection handlers
+      function setupConnection(conn) {
+        conn.on("data", (data) => {
+          if (data.type === "file-start") {
+            // File transfer starting
+            createProgressBar(data.filename);
+          } else if (data.type === "file-chunk") {
+            // Update progress
+            updateProgress(data.progress);
+          } else if (data.type === "file-complete") {
+            // File transfer complete
+            const blob = new Blob(data.chunks, { type: data.fileType });
+            saveFile(blob, data.filename);
+            removeProgressBar();
+          }
+        });
+      }
+
+      // Send file function
+      async function sendFile(event) {
+        event.preventDefault();
+
+        const targetId = document.getElementById("target_id").value;
+        const fileInput = document.getElementById("file");
+        const file = fileInput.files[0];
+
+        if (!file) {
+          alert("Please select a file");
+          return false;
+        }
+
+        let conn = connections[targetId];
+        if (!conn) {
+          conn = peer.connect(targetId);
+          connections[targetId] = conn;
+          setupConnection(conn);
+
+          // Wait for connection to be established
+          await new Promise((resolve) => {
+            conn.on("open", resolve);
+          });
+        }
+
+        // Show progress bar
+        const progress = document.getElementById("progress");
+        progress.classList.remove("d-none");
+        const progressBar = progress.querySelector(".progress-bar");
+
+        // Start file transfer
+        conn.send({
+          type: "file-start",
+          filename: file.name,
+        });
+
+        // Read and send file in chunks
+        const chunkSize = 16384;
+        const chunks = [];
+        const reader = new FileReader();
+        let offset = 0;
+
+        reader.onload = (e) => {
+          const chunk = e.target.result;
+          chunks.push(chunk);
+
+          conn.send({
+            type: "file-chunk",
+            chunk: chunk,
+            progress: Math.min(100, (offset / file.size) * 100),
+          });
+
+          offset += chunk.byteLength;
+          progressBar.style.width = `${Math.min(
+            100,
+            (offset / file.size) * 100
+          )}%`;
+
+          if (offset < file.size) {
+            // Read next chunk
+            readChunk();
+          } else {
+            // Transfer complete
+            conn.send({
+              type: "file-complete",
+              chunks: chunks,
+              filename: file.name,
+              fileType: file.type,
+            });
+
+            // Hide progress bar
+            setTimeout(() => {
+              progress.classList.add("d-none");
+              progressBar.style.width = "0%";
+            }, 1000);
+          }
+        };
+
+        function readChunk() {
+          const slice = file.slice(offset, offset + chunkSize);
+          reader.readAsArrayBuffer(slice);
+        }
+
+        // Start reading
+        readChunk();
+        return false;
+      }
+
+      // Save received file
+      function saveFile(blob, filename) {
+        // Add to received files list
+        const receivedFiles = document.getElementById("receivedFiles");
+        const listItem = document.createElement("div");
+        listItem.className = "list-group-item";
+
+        // Create object URL for the file
+        const url = URL.createObjectURL(blob);
+
+        const currentTime = new Date().toLocaleString();
+
+        listItem.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0">${filename}</h6>
+                        <small class="text-muted">Received: ${currentTime}</small>
+                    </div>
+                    <div>
+                        <button onclick="downloadFile('${url}', '${filename}')" class="btn btn-sm btn-primary">Download</button>
+                    </div>
+                </div>
+            `;
+        receivedFiles.insertBefore(listItem, receivedFiles.firstChild);
+      }
+
+      // Download file function
+      function downloadFile(url, filename) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+
+      // Progress bar functions
+      function createProgressBar(filename) {
+        const receivedFiles = document.getElementById("receivedFiles");
+        const progressDiv = document.createElement("div");
+        progressDiv.className = "progress mb-2";
+        progressDiv.id = `progress-${filename}`;
+        progressDiv.innerHTML = `
+                <div class="progress-bar" role="progressbar" style="width: 0%">
+                    Receiving ${filename}...
+                </div>
+            `;
+        receivedFiles.insertBefore(progressDiv, receivedFiles.firstChild);
+      }
+
+      function updateProgress(filename, progress) {
+        const progressBar = document.querySelector(
+          `#progress-${filename} .progress-bar`
+        );
+        if (progressBar) {
+          progressBar.style.width = `${progress}%`;
+        }
+      }
+
+      function removeProgressBar(filename) {
+        const progressDiv = document.getElementById(`progress-${filename}`);
+        if (progressDiv) {
+          progressDiv.remove();
+        }
+      }
+
       // Get public IP
       fetch("https://api.ipify.org?format=json")
         .then((response) => response.json())
@@ -174,6 +368,9 @@
           document.getElementById("localIP").textContent =
             "Unable to get local IP";
         });
+
+      // Initialize PeerJS when page loads
+      window.addEventListener("load", initPeer);
     </script>
   </body>
 </html>
