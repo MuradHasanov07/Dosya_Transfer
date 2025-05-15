@@ -155,26 +155,78 @@
 
       // Initialize PeerJS
       function initPeer() {
-        peer = new Peer();
+        const peerConfig = {
+          debug: 2,
+          config: {
+            iceServers: [
+              { urls: "stun:stun.l.google.com:19302" },
+              { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:stun2.l.google.com:19302" },
+              {
+                urls: "turn:numb.viagenie.ca",
+                username: "webrtc@live.com",
+                credential: "muazkh",
+              },
+              {
+                urls: "turn:relay.metered.ca:80",
+                username: "89e27ddc2be3c0f7f69c0a63",
+                credential: "JWaUHkT3hX3Iu93e",
+              },
+              {
+                urls: "turn:relay.metered.ca:443",
+                username: "89e27ddc2be3c0f7f69c0a63",
+                credential: "JWaUHkT3hX3Iu93e",
+              },
+            ],
+            iceCandidatePoolSize: 10,
+            sdpSemantics: "unified-plan",
+          },
+          host: "peerjs-server.herokuapp.com",
+          secure: true,
+          port: 443,
+        };
+
+        console.log("PeerJS başlatılıyor...");
+        peer = new Peer(null, peerConfig);
 
         peer.on("open", (id) => {
+          console.log("PeerJS ID alındı:", id);
           document.getElementById("connectionId").textContent = id;
         });
 
         peer.on("connection", (conn) => {
+          console.log("Yeni bağlantı alındı:", conn.peer);
           connections[conn.peer] = conn;
           setupConnection(conn);
         });
 
         peer.on("error", (err) => {
-          console.error("PeerJS error:", err);
-          alert("Bağlantı hatası: " + err.message);
+          console.error("PeerJS hatası:", err);
+          if (err.type === "peer-unavailable") {
+            alert("Bağlanmaya çalıştığınız kullanıcı çevrimiçi değil.");
+          } else if (err.type === "disconnected") {
+            console.log("Bağlantı koptu, yeniden bağlanılıyor...");
+            peer.reconnect();
+          } else {
+            alert("Bağlantı hatası: " + err.message);
+          }
+        });
+
+        peer.on("disconnected", () => {
+          console.log("PeerJS bağlantısı koptu, yeniden bağlanılıyor...");
+          peer.reconnect();
         });
       }
 
       // Setup connection handlers
       function setupConnection(conn) {
         console.log("Bağlantı kuruldu:", conn.peer);
+
+        // Bağlantı açıldığında
+        conn.on("open", () => {
+          console.log("Bağlantı açıldı:", conn.peer);
+        });
+
         let fileChunks = [];
         let currentFileName = "";
 
@@ -207,7 +259,8 @@
         });
 
         conn.on("close", () => {
-          console.log("Bağlantı kapandı");
+          console.log("Bağlantı kapandı:", conn.peer);
+          delete connections[conn.peer];
         });
       }
 
