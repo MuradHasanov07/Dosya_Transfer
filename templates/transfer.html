@@ -174,25 +174,40 @@
 
       // Setup connection handlers
       function setupConnection(conn) {
+        console.log("Bağlantı kuruldu:", conn.peer);
         let fileChunks = [];
         let currentFileName = "";
 
         conn.on("data", (data) => {
+          console.log("Veri alındı:", data.type);
+
           if (data.type === "file-start") {
+            console.log("Dosya transferi başlıyor:", data.filename);
             fileChunks = [];
             currentFileName = data.filename;
             createProgressBar(data.filename);
           } else if (data.type === "file-chunk") {
+            console.log("Chunk alındı, boyut:", data.chunk.byteLength);
             fileChunks.push(data.chunk);
             updateProgress(data.progress);
           } else if (data.type === "file-complete") {
+            console.log("Dosya transferi tamamlandı");
             const blob = new Blob(fileChunks, { type: data.fileType });
+            console.log("Blob oluşturuldu, boyut:", blob.size);
             saveFile(blob, currentFileName);
             removeProgressBar();
 
             fileChunks = [];
             currentFileName = "";
           }
+        });
+
+        conn.on("error", (err) => {
+          console.error("Bağlantı hatası:", err);
+        });
+
+        conn.on("close", () => {
+          console.log("Bağlantı kapandı");
         });
       }
 
@@ -209,13 +224,22 @@
           return false;
         }
 
+        console.log(
+          "Dosya gönderimi başlıyor:",
+          file.name,
+          "Boyut:",
+          file.size
+        );
+
         let conn = connections[targetId];
         if (!conn) {
+          console.log("Yeni bağlantı kuruluyor:", targetId);
           conn = peer.connect(targetId);
           connections[targetId] = conn;
 
           await new Promise((resolve) => {
             conn.on("open", () => {
+              console.log("Bağlantı açıldı");
               setupConnection(conn);
               resolve();
             });
@@ -232,6 +256,7 @@
           }
 
           // Start file transfer
+          console.log("Dosya başlangıç bilgisi gönderiliyor");
           conn.send({
             type: "file-start",
             filename: file.name,
@@ -239,13 +264,12 @@
 
           // Read and send file in chunks
           const chunkSize = 16384;
-          const chunks = [];
           const reader = new FileReader();
           let offset = 0;
 
           reader.onload = (e) => {
             const chunk = e.target.result;
-            chunks.push(chunk);
+            console.log("Chunk okundu, boyut:", chunk.byteLength);
 
             conn.send({
               type: "file-chunk",
@@ -264,6 +288,7 @@
             if (offset < file.size) {
               readChunk();
             } else {
+              console.log("Dosya gönderimi tamamlanıyor");
               conn.send({
                 type: "file-complete",
                 filename: file.name,
@@ -275,6 +300,7 @@
                 if (progressBar) {
                   progressBar.style.width = "0%";
                 }
+                console.log("Dosya gönderimi tamamlandı");
               }, 1000);
             }
           };
@@ -293,6 +319,7 @@
 
       // Save received file
       function saveFile(blob, filename) {
+        console.log("Dosya kaydediliyor:", filename, "Boyut:", blob.size);
         const receivedFiles = document.getElementById("receivedFiles");
         const listItem = document.createElement("div");
         listItem.className = "list-group-item";
@@ -320,6 +347,7 @@
         }
 
         receivedFiles.insertBefore(listItem, receivedFiles.firstChild);
+        console.log("Dosya başarıyla kaydedildi ve listeye eklendi");
       }
 
       // Download file function
