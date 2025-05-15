@@ -16,7 +16,7 @@ services:
       - key: SECRET_KEY
         fromEnvironment: true
       - key: SQLALCHEMY_DATABASE_URI
-        value: mysql+pymysql://uqek3bmc62yjmwxi:${DB_PASSWORD}@bwg8oyxyf61xjpinspz0-mysql.services.clever-cloud.com:3306/bwg8oyxyf61xjpinspz0
+        value: mysql+pymysql://uqek3bmc62yjmwxi:${DB_PASSWORD}@bwg8oyxyf61xjpinspz0-mysql.services.clever-cloud.com:3306/bwg8oyxyf61xjpinspz0?connect_timeout=60&ssl=true
       - key: UPLOAD_FOLDER
         value: "/opt/render/project/src/uploads"
     disk:
