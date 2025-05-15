@@ -174,19 +174,37 @@
 
       // Setup connection handlers
       function setupConnection(conn) {
+        let fileChunks = [];
+        let currentFileName = "";
+        let currentFileType = "";
+
         conn.on("data", (data) => {
           if (data.type === "file-start") {
             // File transfer starting
+            fileChunks = [];
+            currentFileName = data.filename;
             createProgressBar(data.filename);
           } else if (data.type === "file-chunk") {
-            // Update progress
-            updateProgress(data.progress);
+            // Update progress and store chunk
+            fileChunks.push(data.chunk);
+            updateProgress(currentFileName, data.progress);
           } else if (data.type === "file-complete") {
             // File transfer complete
-            const blob = new Blob(data.chunks, { type: data.fileType });
-            saveFile(blob, data.filename);
-            removeProgressBar();
+            currentFileType = data.fileType;
+            const blob = new Blob(fileChunks, { type: currentFileType });
+            saveFile(blob, currentFileName);
+            removeProgressBar(currentFileName);
+
+            // Reset variables
+            fileChunks = [];
+            currentFileName = "";
+            currentFileType = "";
           }
+        });
+
+        conn.on("error", (err) => {
+          console.error("Connection error:", err);
+          alert("Bağlantı hatası: " + err.message);
         });
       }
 
@@ -280,7 +298,6 @@
 
       // Save received file
       function saveFile(blob, filename) {
-        // Add to received files list
         const receivedFiles = document.getElementById("receivedFiles");
         const listItem = document.createElement("div");
         listItem.className = "list-group-item";
@@ -288,19 +305,28 @@
         // Create object URL for the file
         const url = URL.createObjectURL(blob);
 
-        const currentTime = new Date().toLocaleString();
+        const currentTime = new Date().toLocaleString("tr-TR");
 
         listItem.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="mb-0">${filename}</h6>
-                        <small class="text-muted">Received: ${currentTime}</small>
+                        <small class="text-muted">Alındı: ${currentTime}</small>
                     </div>
                     <div>
-                        <button onclick="downloadFile('${url}', '${filename}')" class="btn btn-sm btn-primary">Download</button>
+                        <button onclick="downloadFile('${url}', '${filename}')" class="btn btn-sm btn-primary">İndir</button>
                     </div>
                 </div>
             `;
+
+        // Eğer "No files yet" mesajı varsa onu kaldır
+        const noFilesMessage = receivedFiles.querySelector(
+          ".text-center.text-muted"
+        );
+        if (noFilesMessage) {
+          noFilesMessage.remove();
+        }
+
         receivedFiles.insertBefore(listItem, receivedFiles.firstChild);
       }
 
@@ -317,30 +343,45 @@
       // Progress bar functions
       function createProgressBar(filename) {
         const receivedFiles = document.getElementById("receivedFiles");
+        const existingProgress = document.getElementById(
+          `progress-${filename}`
+        );
+
+        // Remove existing progress bar if it exists
+        if (existingProgress) {
+          existingProgress.remove();
+        }
+
         const progressDiv = document.createElement("div");
         progressDiv.className = "progress mb-2";
         progressDiv.id = `progress-${filename}`;
         progressDiv.innerHTML = `
                 <div class="progress-bar" role="progressbar" style="width: 0%">
-                    Receiving ${filename}...
+                    ${filename} alınıyor...
                 </div>
             `;
         receivedFiles.insertBefore(progressDiv, receivedFiles.firstChild);
       }
 
       function updateProgress(filename, progress) {
-        const progressBar = document.querySelector(
-          `#progress-${filename} .progress-bar`
-        );
-        if (progressBar) {
-          progressBar.style.width = `${progress}%`;
+        const progressDiv = document.getElementById(`progress-${filename}`);
+        if (progressDiv) {
+          const progressBar = progressDiv.querySelector(".progress-bar");
+          if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${filename} alınıyor... ${Math.round(
+              progress
+            )}%`;
+          }
         }
       }
 
       function removeProgressBar(filename) {
         const progressDiv = document.getElementById(`progress-${filename}`);
         if (progressDiv) {
-          progressDiv.remove();
+          setTimeout(() => {
+            progressDiv.remove();
+          }, 1000);
         }
       }
 
