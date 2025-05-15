@@ -221,133 +221,90 @@
           return false;
         }
 
-        try {
-          // Show loading state
-          const submitButton = event.target.querySelector(
-            'button[type="submit"]'
-          );
-          const originalButtonText = submitButton.innerHTML;
-          submitButton.disabled = true;
-          submitButton.innerHTML =
-            '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Bağlanıyor...';
+        let conn = connections[targetId];
+        if (!conn) {
+          conn = peer.connect(targetId);
+          connections[targetId] = conn;
 
-          let conn = connections[targetId];
-          if (!conn) {
-            conn = peer.connect(targetId);
-            connections[targetId] = conn;
-
-            // Wait for connection to be established with timeout
-            await Promise.race([
-              new Promise((resolve, reject) => {
-                conn.on("open", () => {
-                  setupConnection(conn);
-                  resolve();
-                });
-                conn.on("error", (err) => reject(err));
-              }),
-              new Promise((_, reject) =>
-                setTimeout(
-                  () => reject(new Error("Bağlantı zaman aşımına uğradı")),
-                  10000
-                )
-              ),
-            ]);
-          }
-
-          // Show progress bar
-          const progress = document.getElementById("progress");
-          progress.classList.remove("d-none");
-          const progressBar = progress.querySelector(".progress-bar");
-          progressBar.style.width = "0%";
-          progressBar.textContent = "Dosya gönderiliyor... 0%";
-
-          // Start file transfer
-          conn.send({
-            type: "file-start",
-            filename: file.name,
-          });
-
-          // Read and send file in chunks
-          const chunkSize = 16384;
-          const chunks = [];
-          const reader = new FileReader();
-          let offset = 0;
-
-          reader.onload = (e) => {
-            const chunk = e.target.result;
-            chunks.push(chunk);
-
-            const progress = Math.min(100, (offset / file.size) * 100);
-
-            conn.send({
-              type: "file-chunk",
-              chunk: chunk,
-              progress: progress,
+          // Basit bağlantı bekleme
+          await new Promise((resolve) => {
+            conn.on("open", () => {
+              setupConnection(conn);
+              resolve();
             });
-
-            offset += chunk.byteLength;
-            progressBar.style.width = `${progress}%`;
-            progressBar.textContent = `Dosya gönderiliyor... ${Math.round(
-              progress
-            )}%`;
-
-            if (offset < file.size) {
-              // Read next chunk
-              readChunk();
-            } else {
-              // Transfer complete
-              conn.send({
-                type: "file-complete",
-                filename: file.name,
-                fileType: file.type,
-              });
-
-              // Reset form and show success
-              fileInput.value = "";
-              document.getElementById("target_id").value = "";
-              submitButton.disabled = false;
-              submitButton.innerHTML = originalButtonText;
-
-              // Hide progress bar with animation
-              setTimeout(() => {
-                progress.classList.add("d-none");
-                progressBar.style.width = "0%";
-                progressBar.textContent = "";
-              }, 1000);
-
-              alert("Dosya başarıyla gönderildi!");
-            }
-          };
-
-          reader.onerror = (error) => {
-            throw new Error("Dosya okuma hatası: " + error);
-          };
-
-          function readChunk() {
-            const slice = file.slice(offset, offset + chunkSize);
-            reader.readAsArrayBuffer(slice);
-          }
-
-          // Start reading
-          readChunk();
-        } catch (error) {
-          console.error("Dosya gönderme hatası:", error);
-          alert("Dosya gönderme hatası: " + error.message);
-
-          // Reset UI state
-          const submitButton = event.target.querySelector(
-            'button[type="submit"]'
-          );
-          submitButton.disabled = false;
-          submitButton.innerHTML = "Dosya Gönder";
-
-          const progress = document.getElementById("progress");
-          progress.classList.add("d-none");
-          const progressBar = progress.querySelector(".progress-bar");
-          progressBar.style.width = "0%";
-          progressBar.textContent = "";
+          });
         }
 
+        // Show progress bar
+        const progress = document.getElementById("progress");
+        progress.classList.remove("d-none");
+        const progressBar = progress.querySelector(".progress-bar");
+        progressBar.style.width = "0%";
+        progressBar.textContent = "Dosya gönderiliyor... 0%";
+
+        // Start file transfer
+        conn.send({
+          type: "file-start",
+          filename: file.name,
+        });
+
+        // Read and send file in chunks
+        const chunkSize = 16384;
+        const chunks = [];
+        const reader = new FileReader();
+        let offset = 0;
+
+        reader.onload = (e) => {
+          const chunk = e.target.result;
+          chunks.push(chunk);
+
+          const progress = Math.min(100, (offset / file.size) * 100);
+
+          conn.send({
+            type: "file-chunk",
+            chunk: chunk,
+            progress: progress,
+          });
+
+          offset += chunk.byteLength;
+          progressBar.style.width = `${progress}%`;
+          progressBar.textContent = `Dosya gönderiliyor... ${Math.round(
+            progress
+          )}%`;
+
+          if (offset < file.size) {
+            // Read next chunk
+            readChunk();
+          } else {
+            // Transfer complete
+            conn.send({
+              type: "file-complete",
+              filename: file.name,
+              fileType: file.type,
+            });
+
+            // Reset form
+            fileInput.value = "";
+            document.getElementById("target_id").value = "";
+
+            // Hide progress bar
+            setTimeout(() => {
+              progress.classList.add("d-none");
+              progressBar.style.width = "0%";
+              progressBar.textContent = "";
+            }, 1000);
+
+            alert("Dosya başarıyla gönderildi!");
+          }
+        };
+
+        function readChunk() {
+          const slice = file.slice(offset, offset + chunkSize);
+          reader.readAsArrayBuffer(slice);
+        }
+
+        // Start reading
+        readChunk();
         return false;
       }
 
