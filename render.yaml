@@ -2,18 +2,24 @@ services:
   - type: web
     name: p2p-file-transfer
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: gunicorn wsgi:app
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.0
+        value: 3.11.5
       - key: FLASK_ENV
-        value: development
+        value: production
       - key: FLASK_DEBUG
-        value: "1"
+        value: "0"
       - key: SECRET_KEY
-        value: gizli-anahtar-buraya
+        fromEnvironment: true
       - key: SQLALCHEMY_DATABASE_URI
-        value: mysql+pymysql://root:M-17082005-H@127.0.0.1:3306/p2p_transfer
+        fromEnvironment: true
       - key: UPLOAD_FOLDER
-        value: ./uploads
+        value: "/opt/render/project/src/uploads"
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 1
