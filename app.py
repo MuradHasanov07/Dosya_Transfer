@@ -5,12 +5,28 @@ from config import config
 from extensions import db
 from models import User, File
 
-def create_app(config_name='default'):
+def create_app(config_name='production'):
     app = Flask(__name__)
-    app.config.from_object(config[config_name])
+    
+    # Database URL'sini doğrudan ayarla
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://uqek3bmc62yjmwxi:{}@bwg8oyxyf61xjpinspz0-mysql.services.clever-cloud.com:3306/bwg8oyxyf61xjpinspz0'.format(
+        os.environ.get('DB_PASSWORD', 'default-password')
+    )
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default-secret-key')
+    app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads'))
+    
+    if os.environ.get('FLASK_ENV') == 'development':
+        app.config['DEBUG'] = True
+    else:
+        app.config['DEBUG'] = False
     
     # Veritabanını başlat
     db.init_app(app)
+    
+    with app.app_context():
+        # Veritabanı tablolarını oluştur
+        db.create_all()
     
     # Route'ları kaydet
     @app.route('/')
