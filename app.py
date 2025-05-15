@@ -3,91 +3,88 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 from datetime import datetime
+from config import config
 
-# Uygulama klasörünün yolunu al
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-
+# Flask uygulamasını oluştur
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'gizli_anahtar'
-
-# SQLite veritabanı yolunu ayarla
-DB_PATH = os.path.join(BASE_DIR, 'users.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config.from_object(config['default'])
 
 # Veritabanı nesnesini oluştur
 db = SQLAlchemy(app)
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    surname = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
-
-def init_db():
-    with app.app_context():
-        # Veritabanını oluştur
-        db.create_all()
-        print(f"Database created successfully at {DB_PATH}")
-
-# Veritabanını başlat
-init_db()
+# User ve File modellerini import et
+from models import User, File
 
 @app.route('/')
 def index():
+    if 'user_id' in session:
+        return redirect(url_for('transfer'))
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
+    if 'user_id' in session:
+        return redirect(url_for('transfer'))
+        
     if request.method == 'POST':
+        name = request.form.get('name')
+        surname = request.form.get('surname')
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        # Email kontrolü
+        if User.query.filter_by(email=email).first():
+            flash('Bu email adresi zaten kayıtlı!', 'danger')
+            return redirect(url_for('register'))
+            
+        # Yeni kullanıcı oluştur
         try:
-            name = request.form['name']
-            surname = request.form['surname']
-            email = request.form['email']
-            password = request.form['password']
-            
-            if User.query.filter_by(email=email).first():
-                flash('Email already exists!')
-                return redirect(url_for('register'))
-            
-            hashed_password = generate_password_hash(password, method='sha256')
-            new_user = User(name=name, surname=surname, email=email, password=hashed_password)
+            new_user = User(
+                name=name,
+                surname=surname,
+                email=email
+            )
+            new_user.set_password(password)
             
             db.session.add(new_user)
             db.session.commit()
             
-            print(f"User registered successfully: {email}")
-            flash('Registration successful!')
-            return redirect(url_for('index'))
+            flash('Kayıt başarılı! Giriş yapabilirsiniz.', 'success')
+            return redirect(url_for('login'))
+            
         except Exception as e:
-            print(f"Error during registration: {e}")
             db.session.rollback()
-            flash('Registration failed! Please try again.')
+            flash('Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyiniz.', 'danger')
             return redirect(url_for('register'))
     
     return render_template('register.html')
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    try:
-        email = request.form['email']
-        password = request.form['password']
+    if 'user_id' in session:
+        return redirect(url_for('transfer'))
+        
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
         
         user = User.query.filter_by(email=email).first()
         
-        if user and check_password_hash(user.password, password):
+        if user and user.check_password(password):
+            if not user.is_active:
+                flash('Hesabınız devre dışı bırakılmış.', 'danger')
+                return redirect(url_for('login'))
+                
             session['user_id'] = user.id
-            session['user_email'] = user.email
-            session['user_name'] = user.name
+            session['user_name'] = f"{user.name} {user.surname}"
+            user.last_login = datetime.utcnow()
+            db.session.commit()
+            
             return redirect(url_for('transfer'))
         else:
-            flash('Invalid email or password!')
-            return redirect(url_for('index'))
-    except Exception as e:
-        print(f"Error during login: {e}")
-        flash('Login failed! Please try again.')
-        return redirect(url_for('index'))
+            flash('Geçersiz email veya şifre', 'danger')
+    
+    return render_template('login.html')
 
 @app.route('/logout')
 def logout():
@@ -97,10 +94,20 @@ def logout():
 @app.route('/transfer')
 def transfer():
     if 'user_id' not in session:
-        return redirect(url_for('index'))
+        return redirect(url_for('login'))
+        
+    user_id = session['user_id']
+    user = User.query.get(user_id)
+    
+    if not user:
+        session.clear()
+        return redirect(url_for('login'))
+        
+    received_files = File.query.filter_by(receiver_id=user_id).order_by(File.created_at.desc()).all()
     
     return render_template('transfer.html', 
-                         user_name=session['user_name'])
+                         user_name=session['user_name'],
+                         received_files=received_files)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True) 
+    app.run(debug=True) 
