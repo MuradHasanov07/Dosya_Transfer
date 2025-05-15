@@ -2,8 +2,7 @@ import os
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'gizli-anahtar-buraya'
-    SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI') or \
-        'mysql+pymysql://uqek3bmc62yjmwxi:{}@bwg8oyxyf61xjpinspz0-mysql.services.clever-cloud.com:3306/bwg8oyxyf61xjpinspz0'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('SQLALCHEMY_DATABASE_URI')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER') or \
         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
