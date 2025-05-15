@@ -155,100 +155,44 @@
 
       // Initialize PeerJS
       function initPeer() {
-        const peerConfig = {
-          config: {
-            iceServers: [
-              { urls: "stun:stun.l.google.com:19302" },
-              { urls: "stun:stun1.l.google.com:19302" },
-              { urls: "stun:stun2.l.google.com:19302" },
-              { urls: "stun:stun3.l.google.com:19302" },
-              { urls: "stun:stun4.l.google.com:19302" },
-            ],
-            iceCandidatePoolSize: 10,
-          },
-          debug: 2,
-        };
-
-        peer = new Peer(null, peerConfig);
+        peer = new Peer();
 
         peer.on("open", (id) => {
-          console.log("My peer ID is: " + id);
           document.getElementById("connectionId").textContent = id;
         });
 
         peer.on("connection", (conn) => {
-          console.log("Incoming connection from: " + conn.peer);
           connections[conn.peer] = conn;
           setupConnection(conn);
         });
 
         peer.on("error", (err) => {
           console.error("PeerJS error:", err);
-          if (err.type === "peer-unavailable") {
-            alert(
-              "Bağlanmaya çalıştığınız kullanıcı çevrimiçi değil veya ID yanlış."
-            );
-          } else if (err.type === "disconnected") {
-            alert("Bağlantı koptu. Sayfayı yenileyin ve tekrar deneyin.");
-            location.reload();
-          } else {
-            alert("Bağlantı hatası: " + err.message);
-          }
-        });
-
-        peer.on("disconnected", () => {
-          console.log("Connection lost. Attempting to reconnect...");
-          peer.reconnect();
+          alert("Bağlantı hatası: " + err.message);
         });
       }
 
       // Setup connection handlers
       function setupConnection(conn) {
-        console.log("Setting up connection with: " + conn.peer);
-
-        conn.on("open", () => {
-          console.log("Connection established with: " + conn.peer);
-        });
-
         let fileChunks = [];
         let currentFileName = "";
-        let currentFileType = "";
-        let senderId = "";
 
         conn.on("data", (data) => {
-          console.log("Received data of type: " + data.type);
-
           if (data.type === "file-start") {
-            console.log("Starting file transfer: " + data.filename);
             fileChunks = [];
             currentFileName = data.filename;
-            senderId = conn.peer;
             createProgressBar(data.filename);
           } else if (data.type === "file-chunk") {
             fileChunks.push(data.chunk);
-            updateProgress(currentFileName, data.progress);
+            updateProgress(data.progress);
           } else if (data.type === "file-complete") {
-            console.log("File transfer complete: " + currentFileName);
-            currentFileType = data.fileType;
-            const blob = new Blob(fileChunks, { type: currentFileType });
-            saveFile(blob, currentFileName, senderId);
-            removeProgressBar(currentFileName);
+            const blob = new Blob(fileChunks, { type: data.fileType });
+            saveFile(blob, currentFileName);
+            removeProgressBar();
 
             fileChunks = [];
             currentFileName = "";
-            currentFileType = "";
-            senderId = "";
           }
-        });
-
-        conn.on("error", (err) => {
-          console.error("Connection error with " + conn.peer + ":", err);
-          alert("Bağlantı hatası: " + err.message);
-        });
-
-        conn.on("close", () => {
-          console.log("Connection closed with: " + conn.peer);
-          delete connections[conn.peer];
         });
       }
 
@@ -270,7 +214,6 @@
           conn = peer.connect(targetId);
           connections[targetId] = conn;
 
-          // Basit bağlantı bekleme
           await new Promise((resolve) => {
             conn.on("open", () => {
               setupConnection(conn);
@@ -281,86 +224,80 @@
 
         // Show progress bar
         const progress = document.getElementById("progress");
-        progress.classList.remove("d-none");
-        const progressBar = progress.querySelector(".progress-bar");
-        progressBar.style.width = "0%";
-        progressBar.textContent = "Dosya gönderiliyor... 0%";
+        if (progress) {
+          progress.classList.remove("d-none");
+          const progressBar = progress.querySelector(".progress-bar");
+          if (progressBar) {
+            progressBar.style.width = "0%";
+          }
 
-        // Start file transfer
-        conn.send({
-          type: "file-start",
-          filename: file.name,
-        });
-
-        // Read and send file in chunks
-        const chunkSize = 16384;
-        const chunks = [];
-        const reader = new FileReader();
-        let offset = 0;
-
-        reader.onload = (e) => {
-          const chunk = e.target.result;
-          chunks.push(chunk);
-
-          const progress = Math.min(100, (offset / file.size) * 100);
-
+          // Start file transfer
           conn.send({
-            type: "file-chunk",
-            chunk: chunk,
-            progress: progress,
+            type: "file-start",
+            filename: file.name,
           });
 
-          offset += chunk.byteLength;
-          progressBar.style.width = `${progress}%`;
-          progressBar.textContent = `Dosya gönderiliyor... ${Math.round(
-            progress
-          )}%`;
+          // Read and send file in chunks
+          const chunkSize = 16384;
+          const chunks = [];
+          const reader = new FileReader();
+          let offset = 0;
 
-          if (offset < file.size) {
-            // Read next chunk
-            readChunk();
-          } else {
-            // Transfer complete
+          reader.onload = (e) => {
+            const chunk = e.target.result;
+            chunks.push(chunk);
+
             conn.send({
-              type: "file-complete",
-              filename: file.name,
-              fileType: file.type,
+              type: "file-chunk",
+              chunk: chunk,
+              progress: Math.min(100, (offset / file.size) * 100),
             });
 
-            // Reset form
-            fileInput.value = "";
-            document.getElementById("target_id").value = "";
+            offset += chunk.byteLength;
+            if (progressBar) {
+              progressBar.style.width = `${Math.min(
+                100,
+                (offset / file.size) * 100
+              )}%`;
+            }
 
-            // Hide progress bar
-            setTimeout(() => {
-              progress.classList.add("d-none");
-              progressBar.style.width = "0%";
-              progressBar.textContent = "";
-            }, 1000);
+            if (offset < file.size) {
+              readChunk();
+            } else {
+              conn.send({
+                type: "file-complete",
+                filename: file.name,
+                fileType: file.type,
+              });
 
-            alert("Dosya başarıyla gönderildi!");
+              setTimeout(() => {
+                progress.classList.add("d-none");
+                if (progressBar) {
+                  progressBar.style.width = "0%";
+                }
+              }, 1000);
+            }
+          };
+
+          function readChunk() {
+            const slice = file.slice(offset, offset + chunkSize);
+            reader.readAsArrayBuffer(slice);
           }
-        };
 
-        function readChunk() {
-          const slice = file.slice(offset, offset + chunkSize);
-          reader.readAsArrayBuffer(slice);
+          readChunk();
+        } else {
+          console.error("Progress element not found");
         }
-
-        // Start reading
-        readChunk();
         return false;
       }
 
       // Save received file
-      function saveFile(blob, filename, senderId) {
+      function saveFile(blob, filename) {
         const receivedFiles = document.getElementById("receivedFiles");
         const listItem = document.createElement("div");
         listItem.className = "list-group-item";
 
-        // Create object URL for the file
         const url = URL.createObjectURL(blob);
-
         const currentTime = new Date().toLocaleString("tr-TR");
 
         listItem.innerHTML = `
@@ -375,7 +312,6 @@
                 </div>
             `;
 
-        // Eğer "No files yet" mesajı varsa onu kaldır
         const noFilesMessage = receivedFiles.querySelector(
           ".text-center.text-muted"
         );
@@ -399,18 +335,8 @@
       // Progress bar functions
       function createProgressBar(filename) {
         const receivedFiles = document.getElementById("receivedFiles");
-        const existingProgress = document.getElementById(
-          `progress-${filename}`
-        );
-
-        // Remove existing progress bar if it exists
-        if (existingProgress) {
-          existingProgress.remove();
-        }
-
         const progressDiv = document.createElement("div");
         progressDiv.className = "progress mb-2";
-        progressDiv.id = `progress-${filename}`;
         progressDiv.innerHTML = `
                 <div class="progress-bar" role="progressbar" style="width: 0%">
                     ${filename} alınıyor...
@@ -419,25 +345,17 @@
         receivedFiles.insertBefore(progressDiv, receivedFiles.firstChild);
       }
 
-      function updateProgress(filename, progress) {
-        const progressDiv = document.getElementById(`progress-${filename}`);
-        if (progressDiv) {
-          const progressBar = progressDiv.querySelector(".progress-bar");
-          if (progressBar) {
-            progressBar.style.width = `${progress}%`;
-            progressBar.textContent = `${filename} alınıyor... ${Math.round(
-              progress
-            )}%`;
-          }
+      function updateProgress(progress) {
+        const progressBar = document.querySelector(".progress-bar");
+        if (progressBar) {
+          progressBar.style.width = `${progress}%`;
         }
       }
 
-      function removeProgressBar(filename) {
-        const progressDiv = document.getElementById(`progress-${filename}`);
+      function removeProgressBar() {
+        const progressDiv = document.querySelector(".progress");
         if (progressDiv) {
-          setTimeout(() => {
-            progressDiv.remove();
-          }, 1000);
+          progressDiv.remove();
         }
       }
 
