@@ -8,4 +8,12 @@ services:
       - key: PYTHON_VERSION
         value: 3.9.0
       - key: FLASK_ENV
-        value: production 
+        value: development
+      - key: FLASK_DEBUG
+        value: "1"
+      - key: SECRET_KEY
+        value: gizli-anahtar-buraya
+      - key: SQLALCHEMY_DATABASE_URI
+        value: mysql+pymysql://root:M-17082005-H@127.0.0.1:3306/p2p_transfer
+      - key: UPLOAD_FOLDER
+        value: ./uploads
