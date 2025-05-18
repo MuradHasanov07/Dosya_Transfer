@@ -134,7 +134,6 @@
         navigator.clipboard
           .writeText(connectionId)
           .then(() => {
-            // Change button text temporarily to show success
             const button = document.querySelector(
               'button[onclick="copyConnectionId()"]'
             );
@@ -153,7 +152,6 @@
       let peer = null;
       let connections = {};
 
-      // Initialize PeerJS
       function initPeer() {
         const peerConfig = {
           debug: 2,
@@ -163,14 +161,12 @@
               { urls: "stun:stun1.l.google.com:19302" },
               { urls: "stun:stun2.l.google.com:19302" },
               {
-                urls: "turn:numb.viagenie.ca",
-                username: "webrtc@live.com",
-                credential: "muazkh",
-              },
-              {
-                urls: "turn:relay.metered.ca:80",
-                username: "89e27ddc2be3c0f7f69c0a63",
-                credential: "JWaUHkT3hX3Iu93e",
+                urls: [
+                  "turn:eu-0.turn.peerjs.com:3478",
+                  "turn:us-0.turn.peerjs.com:3478",
+                ],
+                username: "peerjs",
+                credential: "peerjsp",
               },
               {
                 urls: "turn:relay.metered.ca:443",
@@ -184,6 +180,8 @@
           host: "0.peerjs.com",
           secure: true,
           port: 443,
+          path: "/",
+          key: "peerjs",
         };
 
         console.log("PeerJS başlatılıyor...");
@@ -218,11 +216,9 @@
         });
       }
 
-      // Setup connection handlers
       function setupConnection(conn) {
         console.log("Bağlantı kuruldu:", conn.peer);
 
-        // Bağlantı açıldığında
         conn.on("open", () => {
           console.log("Bağlantı açıldı:", conn.peer);
         });
@@ -264,7 +260,6 @@
         });
       }
 
-      // Send file function
       async function sendFile(event) {
         event.preventDefault();
 
@@ -299,7 +294,6 @@
           });
         }
 
-        // Show progress bar
         const progress = document.getElementById("progress");
         if (progress) {
           progress.classList.remove("d-none");
@@ -308,14 +302,12 @@
             progressBar.style.width = "0%";
           }
 
-          // Start file transfer
           console.log("Dosya başlangıç bilgisi gönderiliyor");
           conn.send({
             type: "file-start",
             filename: file.name,
           });
 
-          // Read and send file in chunks
           const chunkSize = 16384;
           const reader = new FileReader();
           let offset = 0;
@@ -370,7 +362,6 @@
         return false;
       }
 
-      // Save received file
       function saveFile(blob, filename) {
         console.log("Dosya kaydediliyor:", filename, "Boyut:", blob.size);
         const receivedFiles = document.getElementById("receivedFiles");
@@ -403,7 +394,6 @@
         console.log("Dosya başarıyla kaydedildi ve listeye eklendi");
       }
 
-      // Download file function
       function downloadFile(url, filename) {
         const a = document.createElement("a");
         a.href = url;
@@ -413,7 +403,6 @@
         document.body.removeChild(a);
       }
 
-      // Progress bar functions
       function createProgressBar(filename) {
         const receivedFiles = document.getElementById("receivedFiles");
         const progressDiv = document.createElement("div");
@@ -440,7 +429,6 @@
         }
       }
 
-      // Initialize PeerJS when page loads
       window.addEventListener("load", initPeer);
     </script>
   </body>

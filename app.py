@@ -10,16 +10,16 @@ import uuid
 def create_app(config_name='production'):
     app = Flask(__name__)
     
-    # Database URL'sini doğrudan ayarla
+    
     app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://uqek3bmc62yjmwxi:{}@bwg8oyxyf61xjpinspz0-mysql.services.clever-cloud.com:3306/bwg8oyxyf61xjpinspz0'.format(
         os.environ.get('DB_PASSWORD', 'default-password')
     )
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'default-secret-key')
     app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads'))
-    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB limit
+    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  
     
-    # Upload klasörünü oluştur
+   
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     
     if os.environ.get('FLASK_ENV') == 'development':
@@ -27,14 +27,14 @@ def create_app(config_name='production'):
     else:
         app.config['DEBUG'] = False
     
-    # Veritabanını başlat
+    
     db.init_app(app)
     
     with app.app_context():
-        # Veritabanı tablolarını oluştur
+        
         db.create_all()
     
-    # Route'ları kaydet
+    
     @app.route('/')
     def index():
         if 'user_id' in session:
@@ -52,12 +52,12 @@ def create_app(config_name='production'):
             email = request.form.get('email')
             password = request.form.get('password')
             
-            # Email kontrolü
+            
             if User.query.filter_by(email=email).first():
                 flash('Bu email adresi zaten kayıtlı!', 'danger')
                 return redirect(url_for('register'))
                 
-            # Yeni kullanıcı oluştur
+            
             try:
                 new_user = User(
                     name=name,
@@ -144,15 +144,15 @@ def create_app(config_name='production'):
             file_data = data['fileData']
             receiver_id = data['receiverId']
 
-            # Benzersiz dosya adı oluştur
+            
             unique_filename = f"{uuid.uuid4()}_{filename}"
             file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
 
-            # Dosyayı kaydet
+            
             with open(file_path, 'wb') as f:
                 f.write(file_data.encode())
 
-            # Veritabanına kaydet
+           
             new_file = File(
                 filename=filename,
                 filepath=file_path,
@@ -178,7 +178,6 @@ def create_app(config_name='production'):
 
         file = File.query.get_or_404(file_id)
 
-        # Dosyaya erişim kontrolü
         if file.receiver_id != session['user_id']:
             flash('Bu dosyaya erişim izniniz yok', 'danger')
             return redirect(url_for('transfer'))
