@@ -1,90 +1,122 @@
-📁 Dosya Transfer Uygulaması (C# | TCP/UDP | Socket Programming)
+# Dosya Transfer (Flask + PeerJS)
 
-Bu proje, C# dili ve .NET Framework kullanılarak geliştirilmiş bir ağ tabanlı dosya transfer sistemidir.
-İstemci–sunucu mimarisiyle çalışan uygulama, TCP ve UDP protokolleri üzerinden güvenli ve hızlı veri aktarımı sağlar.
+Tarayıcılar arası **P2P dosya transferi** yapan, kullanıcı yönetimi ve oturum yapısı içeren bir Flask uygulamasıdır. Uygulama, gönderici ve alıcı arasında PeerJS/WebRTC bağlantısı kurar; kullanıcı girişi, kayıt ve dosya geçmişi gibi süreçleri sunucu tarafında yönetir.
 
-✨ Özellikler
+## Özellikler
 
-📤 Dosya gönderme ve alma (her boyutta dosya desteği)
+- Kullanıcı kayıt / giriş / çıkış akışı
+- Her kullanıcı için benzersiz **Connection ID** ile eşleşme
+- PeerJS üzerinden tarayıcılar arasında dosya gönderimi
+- Aktarım sırasında ilerleme çubuğu
+- Alınan dosyaları listede gösterme ve indirme
+- Flask + SQLAlchemy ile kullanıcı ve dosya kayıtlarının saklanması
+- Render (gunicorn) uyumlu dağıtım konfigürasyonu
 
-🔄 TCP/UDP protokol seçimi
+## Teknoloji Yığını
 
-📡 Çoklu istemci bağlantı desteği
+- **Backend:** Flask, Flask-SQLAlchemy
+- **Veritabanı:** MySQL (PyMySQL)
+- **Frontend:** HTML, Bootstrap 5, Vanilla JavaScript
+- **Gerçek zamanlı iletişim:** PeerJS (WebRTC)
+- **Deploy:** gunicorn + Render (`render.yaml`)
 
-🧱 Dosya bütünlüğü kontrolü (checksum)
+## Proje Yapısı
 
-🚫 Bağlantı kesilse bile yeniden gönderim desteği
+```text
+.
+├── app.py                # Uygulama oluşturma, route'lar, oturum yönetimi
+├── models.py             # User ve File modelleri
+├── extensions.py         # SQLAlchemy nesnesi
+├── config.py             # Ortam bazlı yapılandırmalar
+├── wsgi.py               # WSGI giriş noktası
+├── render.yaml           # Render deploy ayarları
+├── requirements.txt      # Python bağımlılıkları
+└── templates/
+    ├── login.html
+    ├── register.html
+    └── transfer.html
+```
 
-🔒 Güvenli bağlantı yönetimi
+## Kurulum (Lokal)
 
-💬 Gerçek zamanlı aktarım durumu ve log kaydı
+> Aşağıdaki adımlar Linux/macOS için örneklenmiştir. Windows'ta sanal ortam aktivasyonu farklılık gösterebilir.
 
-🧠 Mimarisi
+1. Depoyu klonlayın:
 
-Uygulama client–server yapısında geliştirilmiştir:
+```bash
+git clone <repo-url>
+cd Dosya_Transfer
+```
 
-Client  →  TCP/UDP Socket  →  Server
+2. Sanal ortam oluşturun ve aktif edin:
 
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
 
-Server: Dosya alımlarını yönetir, bağlantıları dinler, gelen verileri kaydeder.
+3. Bağımlılıkları kurun:
 
-Client: Dosya seçer, sunucuya bağlanır ve aktarımı başlatır.
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-Her iki taraf da socket tabanlı veri akışı yönetimini gerçekleştirir.
+4. Ortam değişkenlerini tanımlayın:
 
-🚀 Kurulum
+```bash
+export FLASK_ENV=development
+export SECRET_KEY='guclu-bir-gizli-anahtar'
+export DB_PASSWORD='mysql-sifreniz'
+export UPLOAD_FOLDER='./uploads'
+```
 
-Depoyu klonlayın:
+5. Uygulamayı başlatın:
 
-git clone https://github.com/kullanici-adi/dosya-transfer.git
-cd dosya-transfer
+```bash
+python app.py
+```
 
+Varsayılan olarak uygulama `http://127.0.0.1:5000` adresinde çalışır.
 
-Visual Studio'da projeyi açın
+## Ortam Değişkenleri
 
-Server uygulamasını başlatın
+| Değişken | Açıklama |
+|---|---|
+| `SECRET_KEY` | Flask session ve güvenlik anahtarı |
+| `DB_PASSWORD` | MySQL bağlantısı için parola |
+| `UPLOAD_FOLDER` | Yüklenen dosyaların diskte tutulacağı klasör |
+| `FLASK_ENV` | `development` veya `production` |
 
-Client uygulamasını çalıştırın
+## Kullanım Akışı
 
-IP adresi ve portu girerek bağlantıyı başlatın
+1. Kullanıcı kayıt olur ve giriş yapar.
+2. Transfer sayfasında kendi **Connection ID** değerini görür.
+3. Gönderen kullanıcı alıcının Connection ID bilgisini girer ve dosyayı seçer.
+4. Dosya WebRTC üzerinden parçalara bölünerek aktarılır.
+5. Alıcı tarafta dosya listede görünür ve indirilebilir.
 
-🛠️ Kullanılan Teknolojiler
+## Deploy (Render)
 
-C# (.NET Framework / .NET Core)
+Projede Render için hazır bir `render.yaml` tanımı bulunur. Uygulama gunicorn ile ayağa kalkar:
 
-TCP ve UDP Sockets
+- Build: `pip install -r requirements.txt`
+- Start: `gunicorn wsgi:app`
+- Kalıcı disk: `uploads` klasörü için mount
 
-Multithreading (BackgroundWorker / Task)
+Deploy sırasında en azından şu değişkenleri tanımlayın:
 
-Windows Forms (UI)
+- `SECRET_KEY`
+- `DB_PASSWORD`
+- (İsteğe bağlı) `UPLOAD_FOLDER`
 
-Exception Handling ve Event-Driven Architecture
+## Notlar ve İyileştirme Önerileri
 
-🧩 Örnek Kullanım
+- Üretimde `SECRET_KEY` ve veritabanı erişim bilgileri mutlaka güvenli şekilde yönetilmelidir.
+- Dosya boyutu, tip doğrulama ve kötüye kullanım önleme (rate limit) eklenebilir.
+- Büyük dosyalarda aktarım kararlılığı için yeniden deneme/recovery stratejileri geliştirilebilir.
+- Unit/integration testleri eklenerek kalite güvence seviyesi artırılabilir.
 
-Server.exe başlatıldığında, belirlenen portu dinlemeye başlar
+---
 
-Client.exe dosya seçtikten sonra “Gönder” butonuna tıklar
-
-Aktarım ilerlemesi yüzde olarak görüntülenir
-
-📂 Proje Yapısı
-src/
-├── Server/
-│   ├── Program.cs
-│   ├── ServerForm.cs
-│   └── ServerSocket.cs
-├── Client/
-│   ├── Program.cs
-│   ├── ClientForm.cs
-│   └── FileSender.cs
-└── Shared/
-    └── PacketUtils.cs
-
-🧪 Geliştirme Odakları
-
-Socket bağlantı stabilitesi
-
-Hata yönetimi ve bağlantı geri kazanımı
-
-UI thread güvenliği (Invoke / async-await)
+Geliştirmeye katkı vermek isterseniz issue/PR açabilirsiniz. 🚀
